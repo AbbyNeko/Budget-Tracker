@@ -1,6 +1,43 @@
 let transactions = [];
 let myChart;
 
+//offline functionality
+const request = window.indexedDB.open("transactions_db", 5);
+
+// Create schema
+request.onupgradeneeded = event => {
+  const db = event.target.result;
+  
+  // Creates an object store with a listID keypath that can be used to query on.
+  const transactions = db.createObjectStore("transactions", {keyPath: "id"});
+
+}
+
+// Opens a transaction, accesses the toDoList objectStore and statusIndex.
+request.onsuccess = () => {
+  const db = request.result;
+  const transaction = db.transaction(["transactions"], "readwrite");
+  const transactions = transaction.objectStore("transactions");
+
+  //if online check indexedDb
+  if (navigator.onLine) {
+    checkDatabase(db, transactions);
+  } else {
+      // Return an item by index
+      const getRequestIdx = id.getAll();
+      getRequestIdx.onsuccess = () => {
+        console.log(getRequestIdx.result); 
+
+        transactions = transactions.concat(getRequestIdx.result);
+
+        populateTotal();
+        populateTable();
+        populateChart();
+      }; 
+  }
+  
+};
+
 fetch("/api/transaction")
   .then(response => {
     return response.json();
@@ -144,6 +181,33 @@ function sendTransaction(isAdding) {
   });
 }
 
+function checkDatabase(db, transactions) {
+
+   // get all records from store and set to a variable
+   const getAll = transactions.getAll();
+ 
+   getAll.onsuccess = function() {
+     if (getAll.result.length > 0) {
+      fetch("/api/transaction", {
+        method: "POST",
+        body: JSON.stringify(getAll.result),
+        headers: {
+          Accept: "application/json, text/plain, */*",
+          "Content-Type": "application/json"
+        }
+      })
+       .then(response => response.json())
+       .then(() => {
+ 
+         // clear all items in your store
+         transactions.clear();
+
+       });
+     }
+   };
+
+}
+
 document.querySelector("#add-btn").onclick = function() {
   sendTransaction(true);
 };
@@ -151,3 +215,6 @@ document.querySelector("#add-btn").onclick = function() {
 document.querySelector("#sub-btn").onclick = function() {
   sendTransaction(false);
 };
+
+// listen for app coming back online
+window.addEventListener("online", checkDatabase);
