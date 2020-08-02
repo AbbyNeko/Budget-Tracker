@@ -1,7 +1,6 @@
 let transactions = [];
 let myChart;
 
-//offline functionality
 const request = window.indexedDB.open("transactions_db", 5);
 
 // Create schema
@@ -9,47 +8,37 @@ request.onupgradeneeded = event => {
   const db = event.target.result;
   
   // Creates an object store with a listID keypath that can be used to query on.
-  const transactions = db.createObjectStore("transactions", {keyPath: "id"});
+  const transactions = db.createObjectStore("transactions", { keyPath: "id", autoIncrement: true });
+  transactions.createIndex("name", "name");
+  transactions.createIndex("value", "value");
+  transactions.createIndex("date", "date");
 
 }
 
-// Opens a transaction, accesses the toDoList objectStore and statusIndex.
-request.onsuccess = () => {
-  const db = request.result;
+request.onsuccess = event => {
+
+  const db = event.target.result;
   const transaction = db.transaction(["transactions"], "readwrite");
-  const transactions = transaction.objectStore("transactions");
+  const store = transaction.objectStore("transactions");
+  const getAllReq = store.getAll();
 
-  //if online check indexedDb
-  if (navigator.onLine) {
-    checkDatabase(db, transactions);
-  } else {
-      // Return an item by index
-      const getRequestIdx = id.getAll();
-      getRequestIdx.onsuccess = () => {
-        console.log(getRequestIdx.result); 
+  let offlineTransactions = false;
 
-        transactions = transactions.concat(getRequestIdx.result);
-
-        populateTotal();
-        populateTable();
-        populateChart();
-      }; 
-  }
+  getAllReq.onsuccess = () => {
+    offlineTransactions = getAllReq.result;
   
-};
+    if(navigator.onLine) {
+      console.log("online");
+  
+      console.log(offlineTransactions);
+  
+      connectToDatabase(offlineTransactions);
+  
+    } 
+  
+  }
 
-fetch("/api/transaction")
-  .then(response => {
-    return response.json();
-  })
-  .then(data => {
-    // save db data on global variable
-    transactions = data;
-
-    populateTotal();
-    populateTable();
-    populateChart();
-  });
+}
 
 function populateTotal() {
   // reduce transaction amounts to a single total value
@@ -173,6 +162,7 @@ function sendTransaction(isAdding) {
   })
   .catch(err => {
     // fetch failed, so save in indexed db
+    console.log("failed");
     saveRecord(transaction);
 
     // clear form
@@ -181,30 +171,46 @@ function sendTransaction(isAdding) {
   });
 }
 
-function checkDatabase(db, transactions) {
+function saveRecord(transaction) {
+  console.log("saving record");
 
-   // get all records from store and set to a variable
-   const getAll = transactions.getAll();
- 
-   getAll.onsuccess = function() {
-     if (getAll.result.length > 0) {
-      fetch("/api/transaction", {
-        method: "POST",
-        body: JSON.stringify(getAll.result),
-        headers: {
-          Accept: "application/json, text/plain, */*",
-          "Content-Type": "application/json"
-        }
-      })
-       .then(response => response.json())
-       .then(() => {
- 
-         // clear all items in your store
-         transactions.clear();
+    console.log("adding transaction");
+    const db = request.result;
+    const transactionDb = db.transaction(["transactions"], "readwrite");
+    const transactions = transactionDb.objectStore("transactions");
 
-       });
-     }
-   };
+    transactions.add(transaction);
+    
+}
+
+function connectToDatabase(offlineTransactions) {
+
+  fetch("/api/transaction")
+  .then(response => {
+    return response.json();
+  })
+  .then(data => {
+    // save db data on global variable
+    transactions = data;
+
+    if(offlineTransactions) {
+      transactions = transactions.concat(offlineTransactions);
+
+      //sorting by date
+      transactions = transactions.sort(function(a,b){
+        // Turn your strings into dates, and then subtract them
+        // to get a value that is either negative, positive, or zero.
+        return new Date(b.date) - new Date(a.date);
+      });
+    }
+
+    console.log(`new transactions - ${JSON.stringify(transactions)}`)
+
+    populateTotal();
+    populateTable();
+    populateChart();
+
+  });
 
 }
 
@@ -217,4 +223,4 @@ document.querySelector("#sub-btn").onclick = function() {
 };
 
 // listen for app coming back online
-window.addEventListener("online", checkDatabase);
+window.addEventListener("online", connectToDatabase);
